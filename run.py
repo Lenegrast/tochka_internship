@@ -27,7 +27,6 @@ class PriorityQueue:
         return len(self.queue) == 0
 
 def parse_input(lines):
-
     hallway = [None] * 11
     
     room_depth = len(lines) - 3
