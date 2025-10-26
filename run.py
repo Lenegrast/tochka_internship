@@ -24,7 +24,9 @@ def parse_input(lines):
         if c in "ABCD":
             hallway[i] = c
     for d in range(room_depth):
-        line = lines[3 + d]
+        line = lines[3 + d].rstrip()
+        while len(line) < 11:
+            line = " " + line
         for r, x in enumerate([3, 5, 7, 9]):
             ch = line[x]
             if ch in "ABCD":
@@ -37,7 +39,7 @@ def is_final_state(state, room_depth):
         start = 11 + r * room_depth
         for d in range(room_depth):
             obj = state[start + d]
-            if obj is None or ROOM_FOR_TYPE[obj] != r:
+            if obj not in ROOM_FOR_TYPE or ROOM_FOR_TYPE[obj] != r:
                 return False
     return True
 
