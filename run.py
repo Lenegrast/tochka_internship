@@ -1,146 +1,114 @@
 import heapq
 import sys
 
-objects_room = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
-rooms_object = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
-skip_positions = [2, 4, 6, 8]
-energy = {'A': 1, 'B': 10, 'C': 100, 'D': 1000}
+energy_costs = {'A': 1, 'B': 10, 'C': 100, 'D': 1000}
+letter_to_room = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
+room_to_letter = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
+forbidden_hall_positions = [2, 4, 6, 8]
 
-def parse_input(lines):
-
+def read_input(lines):
     depth = 2 if len(lines) == 5 else 4
     hall = lines[1][1:12]
-    rooms = tuple(
-        ''.join(lines[j][3 + i * 2] for j in range(2, 2 + depth))
-        for i in range(4)
-    )
-    return hall, rooms, depth
+    rooms = []
+    for i in range(4):
+        s = ''
+        for j in range(2, 2 + depth):
+            s += lines[j][3 + i * 2]
+        rooms.append(s)
+    return hall, tuple(rooms), depth
 
+def check_goal(rooms, depth):
+    return rooms == tuple(ch * depth for ch in "ABCD")
 
-def is_goal(rooms, depth):
+def push_state(queue, seen, new_state, new_cost):
+    if new_cost < seen.get(new_state, float('inf')):
+        seen[new_state] = new_cost
+        heapq.heappush(queue, (new_cost, new_state))
 
-    goal = tuple(letter * depth for letter in 'ABCD')
-    return rooms == goal
+def move_from_room_to_hall(hall, rooms, room_index, pos, ch, depth_in_room, door, cost):
+    new_hall = hall[:pos] + ch + hall[pos + 1:]
+    temp_rooms = list(rooms)
+    temp_room = list(temp_rooms[room_index])
+    temp_room[depth_in_room] = '.'
+    temp_rooms[room_index] = ''.join(temp_room)
+    new_rooms = tuple(temp_rooms)
+    new_cost = cost + (abs(pos - door) + depth_in_room + 1) * energy_costs[ch]
+    return new_hall, new_rooms, new_cost
 
+def move_from_hall_to_room(hall, rooms, pos, ch, room_index, door, cost):
+    temp_rooms = list(rooms)
+    r = list(temp_rooms[room_index])
+    idx = len(r) - 1
+    while r[idx] != '.':
+        idx -= 1
+    r[idx] = ch
+    temp_rooms[room_index] = ''.join(r)
+    new_rooms = tuple(temp_rooms)
+    new_hall = hall[:pos] + '.' + hall[pos + 1:]
+    new_cost = cost + (abs(pos - door) + idx + 1) * energy_costs[ch]
+    return new_hall, new_rooms, new_cost
 
-def update_state(heap, states, new_state, new_energy_cost):
-
-    if new_energy_cost < states.get(new_state, float('inf')):
-        states[new_state] = new_energy_cost
-        heapq.heappush(heap, (new_energy_cost, new_state))
-
-
-def move_to_hall(hall, rooms, id_room, position, letter,
-                 object_depth, room_entrance, energy_cost):
-   
-    new_hall = hall[:position] + letter + hall[position + 1:]
-    new_rooms = tuple(
-        elem.replace(letter, '.', 1) if i == id_room else elem
-        for i, elem in enumerate(rooms)
-    )
-    new_energy_cost = energy_cost + (abs(position - room_entrance)
-                                     + 1 + object_depth) * energy[letter]
-    return new_hall, new_rooms, new_energy_cost
-
-
-def move_to_room(hall, rooms, position, letter, room_index,
-                 room_entrance, energy_cost):
-    
-    depth_index = len(rooms[room_index]) - 1
-    while rooms[room_index][depth_index] != '.':
-        depth_index -= 1
-    new_rooms = list(rooms)
-    new_rooms[room_index] = (
-            rooms[room_index][:depth_index] + letter +
-            rooms[room_index][depth_index + 1:]
-    )
-    new_rooms = tuple(new_rooms)
-    new_hall = hall[:position] + '.' + hall[position + 1:]
-    new_energy_cost = energy_cost + (abs(position - room_entrance)
-                                     + 1 + depth_index) * energy[letter]
-    return new_hall, new_rooms, new_energy_cost
-
-
-def generate_moves_from_rooms(hall, rooms):
-   
-    moves = []
-    for id_room, room in enumerate(rooms):
-        if all(letter == '.' or letter == rooms_object[id_room] for letter in room):
+def possible_moves_from_rooms(hall, rooms):
+    result = []
+    for room_index, room in enumerate(rooms):
+        if all(ch == '.' or ch == room_to_letter[room_index] for ch in room):
             continue
-        room_entrance = 2 + id_room * 2
-        object_depth = 0
-        while rooms[id_room][object_depth] == '.':
-            object_depth += 1
-        letter = room[object_depth]
-        for position in range(room_entrance - 1, -1, -1):
-            if hall[position] != '.':
+        door = 2 + room_index * 2
+        d = 0
+        while rooms[room_index][d] == '.':
+            d += 1
+        ch = room[d]
+        for pos in range(door - 1, -1, -1):
+            if hall[pos] != '.':
                 break
-            if position not in skip_positions:
-                moves.append((id_room, position, letter, object_depth, room_entrance))
-        for position in range(room_entrance + 1, 11):
-            if hall[position] != '.':
+            if pos not in forbidden_hall_positions:
+                result.append((room_index, pos, ch, d, door))
+        for pos in range(door + 1, 11):
+            if hall[pos] != '.':
                 break
-            if position not in skip_positions:
-                moves.append((id_room, position, letter, object_depth, room_entrance))
-    return moves
+            if pos not in forbidden_hall_positions:
+                result.append((room_index, pos, ch, d, door))
+    return result
 
-
-def generate_moves_to_rooms(hall, rooms):
-   
-    moves = []
-    for position, letter in enumerate(hall):
-        if letter == '.':
+def possible_moves_to_rooms(hall, rooms):
+    result = []
+    for pos, ch in enumerate(hall):
+        if ch == '.':
             continue
-        room_index = objects_room[letter]
-        room_entrance = 2 + 2 * room_index
-        if any(letter_in_room != '.' and letter_in_room != letter
-               for letter_in_room in rooms[room_index]):
+        room_index = letter_to_room[ch]
+        door = 2 + room_index * 2
+        if any(c != '.' and c != ch for c in rooms[room_index]):
             continue
-        path = (range(position + 1, room_entrance + 1)
-                if position < room_entrance
-                else range(room_entrance, position))
+        path = range(pos + 1, door + 1) if pos < door else range(door, pos)
         if any(hall[p] != '.' for p in path):
             continue
-        moves.append((position, letter, room_index, room_entrance))
-    return moves
+        result.append((pos, ch, room_index, door))
+    return result
 
-def solve(lines: list[str]) -> int:
-    
-    hall, rooms, depth = parse_input(lines)
-    start_state = (hall, rooms)
-    heap = [(0, start_state)]
-    states = {start_state: 0}
+def solve(lines):
+    hall, rooms, depth = read_input(lines)
+    start = (hall, rooms)
+    queue = [(0, start)]
+    seen = {start: 0}
 
-    while heap:
-        energy_cost, state = heapq.heappop(heap)
-        if energy_cost > states[state]:
+    while queue:
+        cost, state = heapq.heappop(queue)
+        if cost > seen[state]:
             continue
         hall, rooms = state
-        if is_goal(rooms, depth):
-            return energy_cost
-        for id_room, position, letter, obj_depth, room_entrance in generate_moves_from_rooms(hall, rooms):
-            new_hall, new_rooms, new_energy_cost = move_to_hall(
-                hall, rooms, id_room, position, letter, obj_depth, room_entrance, energy_cost
-            )
-            update_state(heap, states, (new_hall, new_rooms), new_energy_cost)
-        for position, letter, room_index, room_entrance in generate_moves_to_rooms(hall, rooms):
-            new_hall, new_rooms, new_energy_cost = move_to_room(
-                hall, rooms, position, letter, room_index, room_entrance, energy_cost
-            )
-            update_state(heap, states, (new_hall, new_rooms), new_energy_cost)
-
+        if check_goal(rooms, depth):
+            return cost
+        for r_i, pos, ch, d, door in possible_moves_from_rooms(hall, rooms):
+            nh, nr, nc = move_from_room_to_hall(hall, rooms, r_i, pos, ch, d, door, cost)
+            push_state(queue, seen, (nh, nr), nc)
+        for pos, ch, r_i, door in possible_moves_to_rooms(hall, rooms):
+            nh, nr, nc = move_from_hall_to_room(hall, rooms, pos, ch, r_i, door, cost)
+            push_state(queue, seen, (nh, nr), nc)
     return 0
 
-
 def main():
-
-    lines = []
-    for line in sys.stdin:
-        lines.append(line.rstrip('\n'))
-
-    result = solve(lines)
-    print(result)
-
+    lines = [line.strip() for line in sys.stdin]
+    print(solve(lines))
 
 if __name__ == "__main__":
     main()
